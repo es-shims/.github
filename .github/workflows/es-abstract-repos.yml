@@ -1,0 +1,109 @@
+name: update es-abstract repository list
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      repos: ${{ steps.set-matrix.outputs.repos }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          disable-sudo: true
+          egress-policy: audit
+          allowed-endpoints: >
+            github.com:443
+            raw.githubusercontent.com:443
+            nodejs.org:443
+            iojs.org:443
+            registry.npmjs.org:443
+            actions-results-receiver-production.githubapp.com:443
+      - name: Set matrix
+        id: set-matrix
+        run: |
+          repos=()
+          for org in es-shims inspect-js ljharb; do
+            while IFS= read -r line; do
+                repos+=("$line")
+            done < <(gh repo list $org --json nameWithOwner --jq '.[] | .nameWithOwner')
+          done
+          repos+=("paulmillr/Array.prototype.find")
+          repos+=("paulmillr/Array.prototype.findIndex")
+          repos+=("mathiasbynens/String.fromCodePoint")
+          repos+=("mathiasbynens/Array.from")
+
+          repos_filtered="$(printf "%s\n" "${repos[@]}" | grep -v '.github' | grep -v es-abstract | jq -R -s -c 'split("\n")[:-1]')"
+          echo $repos_filtered
+          echo "repos=$repos_filtered" >> $GITHUB_OUTPUT
+        env:
+            GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  filter-repo:
+    name: 'filter:'
+    runs-on: ubuntu-latest
+    needs: [matrix]
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        repository: ${{ fromJson(needs.matrix.outputs.repos) }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          disable-sudo: true
+          egress-policy: audit
+          allowed-endpoints: >
+            github.com:443
+            raw.githubusercontent.com:443
+            nodejs.org:443
+            iojs.org:443
+            registry.npmjs.org:443
+            actions-results-receiver-production.githubapp.com:443
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repository }}
+
+      - name: does es-abstract exist?
+        id: check_dependency
+        run: |
+          OUTPUT=$(cat package.json | jq '.dependencies["es-abstract"]')
+          if [ "$OUTPUT" == "null" ] || [ -z "$OUTPUT" ]; then
+            echo "KEEP=false" >> $GITHUB_OUTPUT
+          else
+            echo "KEEP=true" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: repos-with-es-abstract
+
+      - if: ${{ steps.check_dependency.outputs.KEEP != 'true' }}
+        name: 'delete ${{ matrix.repository }}'
+        run: rm -rf ${{ matrix.repository }}
+
+      - if: ${{ steps.check_dependency.outputs.KEEP == 'true' }}
+        name: 'add ${{ matrix.repository }}'
+        run: mkdir -p "$(dirname "${{ matrix.repository }}")" && touch "${{ matrix.repository }}"
+        continue-on-error: true # in case it already exists
+
+      - name: commit and push with retries
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
+          git add .
+          git commit -am "${{ matrix.repository }}: ${{ steps.check_dependency.outputs.KEEP == 'true' && 'added' || 'deleted' }}" || exit 0
+
+          RETRIES=5
+          until [ $RETRIES -le 0 ]; do
+            git pull --rebase
+            git push && break
+            RETRIES=$((RETRIES-1))
+            sleep 5
+          done

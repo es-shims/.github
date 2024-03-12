@@ -1,0 +1,90 @@
+name: 'upgrade es-abstract'
+
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+    matrix:
+        runs-on: ubuntu-latest
+        outputs:
+            repos: ${{ steps.set-matrix.outputs.repos }}
+        steps:
+            - name: Harden Runner
+              uses: step-security/harden-runner@v2
+              with:
+                disable-sudo: true
+                egress-policy: audit
+                allowed-endpoints: >
+                    github.com:443
+                    raw.githubusercontent.com:443
+                    nodejs.org:443
+                    iojs.org:443
+                    registry.npmjs.org:443
+                    actions-results-receiver-production.githubapp.com:443
+            - name: Set matrix
+              id: set-matrix
+              run: |
+                echo "repos="$(gh api repos/es-shims/.github/git/trees/repos-with-es-abstract?recursive=1 --jq '[.tree[] | select(.type=="blob") | .path]')"" >> $GITHUB_OUTPUT
+              env:
+                GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    upgrade:
+        name: 'update'
+        runs-on: ubuntu-latest
+        needs: [matrix]
+        permissions:
+            contents: write
+        strategy:
+            fail-fast: false
+            matrix:
+              repository: ${{ fromJson(needs.matrix.outputs.repos) }}
+        steps:
+            - name: Harden Runner
+              uses: step-security/harden-runner@v2
+              with:
+                disable-sudo: true
+                egress-policy: audit
+                allowed-endpoints: >
+                    github.com:443
+                    raw.githubusercontent.com:443
+                    nodejs.org:443
+                    iojs.org:443
+                    registry.npmjs.org:443
+                    actions-results-receiver-production.githubapp.com:443
+            - uses: actions/checkout@v4
+              with:
+                repository: ${{ matrix.repository }}
+                token: ${{ secrets.GH_TOKEN }}
+            - uses: ljharb/actions/node/install@main
+
+            - name: 'update es-abstract to latest version'
+              run: |
+                npm install --save "es-abstract@^$(npm show es-abstract versions --json | jq '.[-1]' -r)"
+            - run: |
+                wget https://raw.githack.com/es-shims/.github/main/codemods/es-abstract.mjs
+              working-directory: /home/runner/.nvm/
+            - name: codemod all the files
+              run: |
+                npx glob@latest '**/*.js' | grep -v node_modules | xargs -I {} npx jscodeshift -t /home/runner/.nvm/es-abstract.mjs {}
+            - name: delete unused files
+              run: |
+                npx @ljharb/unused-files --ignorePattern={auto,polyfill,implementation,shim}.js --ignorePattern='test/**' --ignorePattern='tests/**' | xargs -I {} rm {}
+            - name: autofix linting errors
+              run: |
+                npm run lint --ignore-scripts -- --quiet --fix
+            - name: fail if any old year AOs remain
+              run: |
+                YEAR="$(ls -F node_modules/es-abstract/ | \grep -E '\d+\/' | sort -n | tail -n1 | cut -d \/ -f1)"
+                if [ "$(git grep -P 'es-abstract\/\d+' | grep -cv "es-abstract/${YEAR}")" -ne 0 ]; then
+                  >&2 echo "es-abstract is not updated to ${YEAR} in all files - needs manual update."
+                  exit 1
+                fi
+            - run: git status
+            - run: git --no-pager diff
+            - run: npm test
+            - uses: stefanzweifel/git-auto-commit-action@v5
+              with:
+                commit_message: '[Deps] update `es-abstract`'
+                push_options: --dry-run
