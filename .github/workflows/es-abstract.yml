@@ -67,7 +67,7 @@ jobs:
               working-directory: /home/runner/.nvm/
             - name: codemod all the files
               run: |
-                npx glob@latest '**/*.js' | grep -v node_modules | xargs -I {} npx jscodeshift -t /home/runner/.nvm/es-abstract.mjs {}
+                npx glob@latest '**/*.js' --ignore 'node_modules/**' | xargs -I {} npx jscodeshift -t /home/runner/.nvm/es-abstract.mjs {}
             - name: delete unused files
               run: |
                 npx @ljharb/unused-files --ignorePattern={auto,polyfill,implementation,shim}.js --ignorePattern='test/**' --ignorePattern='tests/**' | xargs -I {} rm {}
