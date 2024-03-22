@@ -29,13 +29,25 @@ jobs:
           repos=()
           for org in es-shims inspect-js ljharb; do
             while IFS= read -r line; do
-                repos+=("$line")
-            done < <(gh repo list $org --json nameWithOwner --jq '.[] | .nameWithOwner')
+              repos+=("$line")
+            done < <(gh repo list $org --limit 999 --json nameWithOwner,isFork --jq '.[] | select(.isFork | not) | .nameWithOwner')
           done
+
+          repos+=("mathiasbynens/Array.from")
+          repos+=("mathiasbynens/Array.of")
+          repos+=("mathiasbynens/RegExp.prototype.search")
+          repos+=("mathiasbynens/RegExp.prototype.match")
+          repos+=("mathiasbynens/String.prototype.endsWith")
+          repos+=("mathiasbynens/String.fromCodePoint")
+          repos+=("mathiasbynens/String.prototype.startsWith")
+          repos+=("mathiasbynens/String.prototype.codePointAt")
+          repos+=("mathiasbynens/String.prototype.codePointAt")
+          repos+=("mathiasbynens/String.prototype.repeat")
+          repos+=("mathiasbynens/String.prototype.at")
+          repos+=("mathiasbynens/String.prototype.includes")
+
           repos+=("paulmillr/Array.prototype.find")
           repos+=("paulmillr/Array.prototype.findIndex")
-          repos+=("mathiasbynens/String.fromCodePoint")
-          repos+=("mathiasbynens/Array.from")
 
           repos_filtered="$(printf "%s\n" "${repos[@]}" | grep -v '.github' | grep -v es-abstract | jq -R -s -c 'split("\n")[:-1]')"
           echo $repos_filtered
@@ -98,7 +110,7 @@ jobs:
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
           git add .
-          git commit -am "${{ matrix.repository }}: ${{ steps.check_dependency.outputs.KEEP == 'true' && 'added' || 'deleted' }}" || exit 0
+          git commit -am "${{ steps.check_dependency.outputs.KEEP == 'true' && '+' || '-' }} ${{ matrix.repository }}" || exit 0
 
           RETRIES=5
           until [ $RETRIES -le 0 ]; do

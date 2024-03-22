@@ -6,85 +6,188 @@ permissions:
   contents: read
 
 jobs:
-    matrix:
-        runs-on: ubuntu-latest
-        outputs:
-            repos: ${{ steps.set-matrix.outputs.repos }}
-        steps:
-            - name: Harden Runner
-              uses: step-security/harden-runner@v2
-              with:
-                disable-sudo: true
-                egress-policy: audit
-                allowed-endpoints: >
-                    github.com:443
-                    raw.githubusercontent.com:443
-                    nodejs.org:443
-                    iojs.org:443
-                    registry.npmjs.org:443
-                    actions-results-receiver-production.githubapp.com:443
-            - name: Set matrix
-              id: set-matrix
-              run: |
-                echo "repos="$(gh api repos/es-shims/.github/git/trees/repos-with-es-abstract?recursive=1 --jq '[.tree[] | select(.type=="blob") | .path]')"" >> $GITHUB_OUTPUT
-              env:
-                GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      repos: ${{ steps.set-matrix.outputs.repos }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          disable-sudo: true
+          egress-policy: audit
+          allowed-endpoints: >
+              github.com:443
+              raw.githubusercontent.com:443
+              nodejs.org:443
+              iojs.org:443
+              registry.npmjs.org:443
+              actions-results-receiver-production.githubapp.com:443
 
-    upgrade:
-        name: 'update'
-        runs-on: ubuntu-latest
-        needs: [matrix]
-        permissions:
-            contents: write
-        strategy:
-            fail-fast: false
-            matrix:
-              repository: ${{ fromJson(needs.matrix.outputs.repos) }}
-        steps:
-            - name: Harden Runner
-              uses: step-security/harden-runner@v2
-              with:
-                disable-sudo: true
-                egress-policy: audit
-                allowed-endpoints: >
-                    github.com:443
-                    raw.githubusercontent.com:443
-                    nodejs.org:443
-                    iojs.org:443
-                    registry.npmjs.org:443
-                    actions-results-receiver-production.githubapp.com:443
-            - uses: actions/checkout@v4
-              with:
-                repository: ${{ matrix.repository }}
-                token: ${{ secrets.GH_TOKEN }}
-            - uses: ljharb/actions/node/install@main
+      - name: Set matrix
+        id: set-matrix
+        run: |
+          REPOS=$(gh api repos/es-shims/.github/git/trees/repos-with-es-abstract?recursive=1 --jq '[.tree[] | select(.type=="blob") | .path]')
+          echo "repos=$REPOS" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: 'update es-abstract to latest version'
-              run: |
-                npm install --save "es-abstract@^$(npm show es-abstract versions --json | jq '.[-1]' -r)"
-            - run: |
-                wget https://raw.githack.com/es-shims/.github/main/codemods/es-abstract.mjs
-              working-directory: /home/runner/.nvm/
-            - name: codemod all the files
-              run: |
-                npx glob@latest '**/*.js' --ignore 'node_modules/**' | xargs npx jscodeshift -t /home/runner/.nvm/es-abstract.mjs
-            - name: delete unused files
-              run: |
-                npx @ljharb/unused-files --ignorePattern={auto,polyfill,implementation,shim}.js --ignorePattern='test/**' --ignorePattern='tests/**' | xargs -I {} rm {}
-            - name: autofix linting errors
-              run: |
-                npm run lint --ignore-scripts -- --quiet --fix
-            - name: fail if any old year AOs remain
-              run: |
-                YEAR="$(ls -F node_modules/es-abstract/ | \grep -E '\d+\/' | sort -n | tail -n1 | cut -d \/ -f1)"
-                if [ "$(git grep -P 'es-abstract\/\d+' | grep -cv "es-abstract/${YEAR}")" -ne 0 ]; then
-                  >&2 echo "es-abstract is not updated to ${YEAR} in all files - needs manual update."
-                  exit 1
-                fi
-            - run: git status
-            - run: git --no-pager diff
-            - run: npm test
-            - uses: stefanzweifel/git-auto-commit-action@v5
-              with:
-                commit_message: '[Deps] update `es-abstract`'
-                push_options: --dry-run
+  qualify:
+    name: '?'
+    runs-on: ubuntu-latest
+    needs: [matrix]
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        repository: ${{ fromJson(needs.matrix.outputs.repos) }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          disable-sudo: true
+          egress-policy: audit
+          allowed-endpoints: >
+              github.com:443
+              raw.githubusercontent.com:443
+              nodejs.org:443
+              iojs.org:443
+              registry.npmjs.org:443
+              actions-results-receiver-production.githubapp.com:443
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repository }}
+          token: ${{ secrets.GH_TOKEN }}
+      - uses: ljharb/actions/node/install@main
+
+      - run: |
+          npm install --save "es-abstract@^$(npm show es-abstract versions --json | jq '.[-1]' -r)"
+      - run: |
+          wget https://raw.githack.com/es-shims/.github/main/codemods/es-abstract.mjs
+        working-directory: /home/runner/.nvm/
+      - name: codemod all the files
+        run: |
+          npx glob@latest '**/*.js' --ignore 'node_modules/**' | xargs npx jscodeshift -t /home/runner/.nvm/es-abstract.mjs
+      - name: delete unused files
+        run: |
+          npx @ljharb/unused-files --ignorePattern={auto,polyfill,implementation,shim}.js --ignorePattern='test/**' --ignorePattern='tests/**' | xargs -I {} rm {}
+      - name: autofix linting errors
+        run: |
+          npm run lint --ignore-scripts -- --quiet --fix
+      - name: fail if any old year AOs remain
+        run: |
+          YEAR="$(ls -F node_modules/es-abstract/ | \grep -E '\d+\/' | sort -n | tail -n1 | cut -d \/ -f1)"
+          if [ "$(git grep -P 'es-abstract\/\d+' | grep -cv "es-abstract/${YEAR}")" -ne 0 ]; then
+            >&2 echo "es-abstract is not updated to ${YEAR} in all files - needs manual update."
+            exit 1
+          fi
+      - run: git status
+      - run: git --no-pager diff
+
+      - name: Check for changes besides package.json
+        id: check-changes
+        run: |
+          if [ "$(git --no-pager diff --name-only | grep -v package.json | wc -l)" -ne 0 ]; then
+            echo true
+            echo "changes_exist=true" >> $GITHUB_OUTPUT
+          else
+            echo false
+            echo "changes_exist=false" >> $GITHUB_OUTPUT
+          fi
+
+      - run: npm test
+        if: steps.check-changes.outputs.changes_exist == 'true'
+
+      - name: create patch file
+        if: steps.check-changes.outputs.changes_exist == 'true'
+        run: |
+          DIRNAME="patches/$(dirname "${{ matrix.repository }}")"
+          FILENAME="patches/${{ matrix.repository }}.patch"
+          mkdir -p "${DIRNAME}"
+          git diff > "${FILENAME}"
+
+      - name: preprocess repository Name
+        if: steps.check-changes.outputs.changes_exist == 'true'
+        id: preprocess-repo-name
+        run: |
+          echo "REPO_NAME=$(echo '${{ matrix.repository }}' | sed 's/\//-/g')" >> $GITHUB_OUTPUT
+
+      - name: upload patch file
+        if: steps.check-changes.outputs.changes_exist == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: patch-${{ steps.preprocess-repo-name.outputs.REPO_NAME }}
+          path: patches/${{ matrix.repository }}.patch
+
+  aggregate:
+    runs-on: ubuntu-latest
+    needs: [qualify]
+    outputs:
+      matrix: ${{ steps.create-matrix.outputs.matrix }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          disable-sudo: true
+          egress-policy: audit
+          allowed-endpoints: >
+              github.com:443
+              raw.githubusercontent.com:443
+              nodejs.org:443
+              iojs.org:443
+              registry.npmjs.org:443
+              actions-results-receiver-production.githubapp.com:443
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: patches/
+
+      - name: Prepare matrix for upgrade job
+        id: create-matrix
+        run: |
+          PATCH_FILES=$(find patches -type f -print | sed 's|patches/||' | sed 's|patch-||' | sed 's|.patch$||' | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          echo "matrix=${PATCH_FILES}" >> $GITHUB_OUTPUT
+          echo "${PATCH_FILES}"
+
+      - name: Debug - List patches directory
+        run: ls -l patches/
+
+  upgrade:
+    runs-on: ubuntu-latest
+    needs: [aggregate]
+    if: ${{ fromJson(needs.aggregate.outputs.matrix).length > 0 }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        repository: ${{ fromJson(needs.aggregate.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repository }}
+          token: ${{ secrets.GH_TOKEN }}
+      - uses: ljharb/actions/node/install@main
+
+      - name: preprocess repository Name
+        id: preprocess-repo-name
+        run: |
+          echo "REPO_NAME=$(echo '${{ matrix.repository }}' | sed 's/\//-/g')" >> $GITHUB_OUTPUT
+
+      - name: download patch file
+        uses: actions/download-artifact@v4
+        with:
+          name: patch-${{ steps.preprocess-repo-name.outputs.REPO_NAME }}
+          path: patches/
+
+      - name: Apply patch
+        run: |
+          git apply "../patches/${{ matrix.repository }}.patch"
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: '[Deps] update `es-abstract`'
+          push_options: --dry-run
