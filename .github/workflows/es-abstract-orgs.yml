@@ -1,0 +1,55 @@
+name: Chunk Repos and Dispatch
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  chunk-and-dispatch:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        org:
+          - es-shims
+          - inspect-js
+          - ljharb
+          - mathiasbynens
+          - paulmillr
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          disable-sudo: true
+          egress-policy: audit
+          allowed-endpoints: >
+            github.com:443
+            raw.githubusercontent.com:443
+            nodejs.org:443
+            iojs.org:443
+            registry.npmjs.org:443
+            actions-results-receiver-production.githubapp.com:443
+
+      - name: Fetch and chunk repos
+        id: fetch_and_chunk
+        run: |
+          repos=()
+          while IFS= read -r line; do
+            repos+=("$line")
+          done < <(gh repo list ${{ matrix.org }} --limit 999 --json nameWithOwner,isFork,isArchived,isEmpty --jq '.[] | select(.isFork | not) | select(.isArchived | not) | select(.isEmpty | not) | .nameWithOwner')
+
+          # Chunking repos array into chunks of 250
+          CHUNKS=250
+          for ((i = 0; i < ${#repos[@]}; i += CHUNKS)); do
+            chunk=$(printf "%s\n" "${repos[@]:i:CHUNKS}" | jq -R -s -c 'split("\n")[:-1]')
+            echo "Dispatching chunk $((i / CHUNKS + 1))"
+            
+            gh workflow run es-abstract-repos.yml \
+              --repo ${{ github.repository }} \
+              --ref ${{ github.ref }} \
+              -F org=${{ matrix.org }} \
+              -F repos="${chunk}"
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
