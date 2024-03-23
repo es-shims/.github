@@ -75,7 +75,7 @@ jobs:
           npx @ljharb/unused-files --ignorePattern={auto,polyfill,implementation,shim}.js --ignorePattern='test/**' --ignorePattern='tests/**' | xargs -I {} rm {}
       - name: autofix linting errors
         run: |
-          npm run lint --ignore-scripts -- --quiet --fix
+          npm run lint --ignore-scripts -- --quiet --fix || npx eslint --ext=js,mjs . --quiet --fix
       - name: fail if any old year AOs remain
         run: |
           YEAR="$(ls -F node_modules/es-abstract/ | \grep -E '\d+\/' | sort -n | tail -n1 | cut -d \/ -f1)"
