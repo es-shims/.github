@@ -27,7 +27,7 @@ jobs:
       - name: Set matrix
         id: set-matrix
         run: |
-          REPOS=$(gh api repos/es-shims/.github/git/trees/repos-with-es-abstract?recursive=1 --jq '[.tree[] | select(.type=="blob") | .path]')
+          REPOS=$(gh api repos/es-shims/.github/git/trees/repos-with-es-abstract?recursive=1 --jq '[.tree[] | select(.type=="blob") | .path] | sort_by(. | ascii_downcase)')
           echo "repos=$REPOS" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
