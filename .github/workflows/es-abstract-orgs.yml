@@ -44,7 +44,7 @@ jobs:
           for ((i = 0; i < ${#repos[@]}; i += CHUNKS)); do
             chunk=$(printf "%s\n" "${repos[@]:i:CHUNKS}" | jq -R -s -c 'split("\n")[:-1]')
             echo "Dispatching chunk $((i / CHUNKS + 1))"
-            
+
             gh workflow run es-abstract-repos.yml \
               --repo ${{ github.repository }} \
               --ref ${{ github.ref }} \
