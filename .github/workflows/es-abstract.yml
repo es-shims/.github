@@ -69,10 +69,10 @@ jobs:
         working-directory: /home/runner/.nvm/
       - name: codemod all the files
         run: |
-          npx glob@latest '**/*.js' --ignore 'node_modules/**' | xargs npx jscodeshift -t /home/runner/.nvm/es-abstract.mjs
+          npx -y glob@latest '**/*.js' --ignore 'node_modules/**' | xargs npx -y jscodeshift@latest -t /home/runner/.nvm/es-abstract.mjs
       - name: delete unused files
         run: |
-          npx @ljharb/unused-files --ignorePattern={auto,polyfill,implementation,shim}.js --ignorePattern='test/**' --ignorePattern='tests/**' | xargs -I {} rm {}
+          npx -y @ljharb/unused-files@latest --ignorePattern={auto,polyfill,implementation,shim}.js --ignorePattern='test/**' --ignorePattern='tests/**' | xargs -I {} rm {}
       - name: autofix linting errors
         run: |
           npm run lint --ignore-scripts -- --quiet --fix || npx eslint --ext=js,mjs . --quiet --fix
