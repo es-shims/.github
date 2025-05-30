@@ -82,6 +82,7 @@ jobs:
       - name: fail if any old year AOs remain
         run: |
           YEAR="$(ls -F node_modules/es-abstract/ | \grep -E '\d+\/' | sort -n | tail -n1 | cut -d \/ -f1)"
+          echo "YEAR=${YEAR}"
           if [ "$(git grep -P 'es-abstract\/\d+' | grep -cv "es-abstract/${YEAR}")" -ne 0 ]; then
             >&2 echo "es-abstract is not updated to ${YEAR} in all files - needs manual update."
             exit 1

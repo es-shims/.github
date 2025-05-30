@@ -7,7 +7,7 @@ function isRequire(j, declaration) {
 }
 
 export default function (fileInfo, { jscodeshift: j }) {
-	const latestYear = 2024;
+	const latestYear = 2025;
 
 	return j(fileInfo.source)
 		.find(j.VariableDeclaration)
